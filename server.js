@@ -92,8 +92,8 @@ app.post("/api/pagamento", autenticar, async (req, res) => {
                 metadata: { uid: req.uid },
                 back_urls: {
                     // Aqui você deve colocar o seu link da NETLIFY quando ele estiver pronto
-                    success: "https://seu-site.netlify.app", 
-                    failure: "https://seu-site.netlify.app"
+                    success: "https://therux.netlify.app", 
+                    failure: "https://therux.netlify.app"
                 },
                 auto_return: "approved"
             }
@@ -106,5 +106,6 @@ app.post("/api/pagamento", autenticar, async (req, res) => {
         res.status(500).json({ error: "Erro ao processar pagamento" });
     }
 });
+
 
 app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
