@@ -27,13 +27,12 @@ const db = admin.firestore();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // --- CONFIGURAÇÃO MERCADO PAGO ---
-// Aqui usamos o seu token APP_USR que agora está protegido pelo link da Render
 const client = new MercadoPagoConfig({ 
     accessToken: process.env.MP_ACCESS_TOKEN 
 });
 const preference = new Preference(client);
 
-// ROTA: CONFIG (Necessária para o Front-end pegar as chaves do Firebase)
+// ROTA: CONFIG (Para o Front-end pegar chaves públicas se necessário)
 app.get("/api/config", (req, res) => {
     res.json({
         apiKey: process.env.FIREBASE_API_KEY,
@@ -91,7 +90,6 @@ app.post("/api/pagamento", autenticar, async (req, res) => {
                 }],
                 metadata: { uid: req.uid },
                 back_urls: {
-                    // Aqui você deve colocar o seu link da NETLIFY quando ele estiver pronto
                     success: "https://therux.netlify.app", 
                     failure: "https://therux.netlify.app"
                 },
@@ -106,6 +104,5 @@ app.post("/api/pagamento", autenticar, async (req, res) => {
         res.status(500).json({ error: "Erro ao processar pagamento" });
     }
 });
-
 
 app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
