@@ -18,24 +18,35 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
-app.use(express.static(__dirname)); // Serve o index.html e CSS da raiz
+app.use(express.static(__dirname)); 
 
-// --- INICIALIZAÇÃO DO FIREBASE ---
+// --- INICIALIZAÇÃO DO FIREBASE (CORRIGIDA) ---
+let serviceAccount;
+const firebaseKeyPath = path.join(__dirname, "firebase-key.json");
+
 try {
-    const firebaseKeyPath = path.join(__dirname, "firebase-key.json");
-    if (fs.existsSync(firebaseKeyPath)) {
-        const serviceAccount = JSON.parse(fs.readFileSync(firebaseKeyPath, "utf8"));
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+        // Prioridade para o Render (Variável de Ambiente)
+        serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        console.log("✅ Firebase usando variável de ambiente!");
+    } else if (fs.existsSync(firebaseKeyPath)) {
+        // Uso local (Arquivo físico)
+        serviceAccount = JSON.parse(fs.readFileSync(firebaseKeyPath, "utf8"));
+        console.log("✅ Firebase usando arquivo local!");
+    }
+
+    if (serviceAccount) {
         if (!admin.apps.length) {
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount)
             });
-            console.log("✅ Firebase Admin conectado!");
+            console.log("🚀 Firebase Admin conectado com sucesso!");
         }
     } else {
-        console.error("❌ Erro: firebase-key.json não encontrado na raiz!");
+        console.error("❌ Erro: Credenciais do Firebase não encontradas!");
     }
 } catch (error) {
-    console.error("❌ Erro ao ler chave do Firebase:", error.message);
+    console.error("❌ Erro ao inicializar Firebase:", error.message);
 }
 
 const db = admin.firestore();
