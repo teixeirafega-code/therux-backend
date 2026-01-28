@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hucks IA - O Gerador de Milhões</title>
+    <style>
+        :root { --primary: #6366f1; --bg: #0f172a; --card: #020617; --success: #10b981; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; margin: 0; }
+        .container { background: var(--card); width: 100%; max-width: 600px; padding: 40px; border-radius: 20px; border: 1px solid #1e293b; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        h1 { text-align: center; background: linear-gradient(90deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.5rem; margin-bottom: 5px; }
+        .status-bar { text-align: center; font-size: 12px; margin-bottom: 20px; color: #94a3b8; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; }
+        input { width: 100%; padding: 15px; border-radius: 12px; border: 1px solid #334155; background: #1e293b; color: white; margin-bottom: 15px; box-sizing: border-box; outline: none; }
+        button { width: 100%; padding: 16px; font-size: 18px; font-weight: bold; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; transition: 0.3s; }
+        button:hover { transform: translateY(-2px); opacity: 0.9; }
+        button:disabled { background: #334155; cursor: not-allowed; }
+        .result-area { display: none; margin-top: 30px; }
+        .result-box { background: #1e293b; padding: 20px; border-radius: 12px; border-left: 5px solid var(--primary); white-space: pre-wrap; margin-bottom: 10px; line-height: 1.6; }
+        .venda-card { background: linear-gradient(135deg, #1e293b 0%, #020617 100%); border: 2px solid var(--primary); padding: 25px; border-radius: 15px; text-align: center; margin-top: 20px; display: none; }
+        .auth-card { background: #111827; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px dashed #334155; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="status-bar" id="status">Conectando...</div>
+        <h1>Hucks IA</h1>
+        
+        <label>Qual produto vamos vender hoje?</label>
+        <input id="produto" placeholder="Ex: Curso de Marketing Digital...">
+        <button id="btn-gerar" disabled>🚀 Gerar Anúncio Profissional</button>
+
+        <div id="auth-area" class="auth-card">
+            <h3 style="text-align: center; margin-top: 0;">🔑 Identifique-se</h3>
+            <input id="email" type="email" placeholder="Seu e-mail">
+            <input id="senha" type="password" placeholder="Sua senha">
+            <div style="display: flex; gap: 10px;">
+                <button id="btn-entrar" style="background: #334155;">Entrar</button>
+                <button id="btn-cadastrar" style="background: transparent; border: 1px solid var(--primary);">Criar Conta</button>
+            </div>
+        </div>
+
+        <div id="venda-card" class="venda-card">
+            <h3>🔥 Créditos Esgotados!</h3>
+            <p>Sua cota gratuita acabou. Adquira mais créditos para continuar vendendo.</p>
+            <button id="btn-comprar" style="background: var(--success);">💰 Comprar 10 Cópias por R$ 7,99</button>
+        </div>
+
+        <div id="result-area" class="result-area">
+            <label>✅ Sugestão da Hucks:</label>
+            <div id="resultado" class="result-box"></div>
+            <p style="text-align: right; font-size: 14px; color: #94a3b8;">Saldo: <strong id="creditos">--</strong> créditos</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const API = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
+                    ? "http://localhost:3001" 
+                    : "https://therux-backend.onrender.com";
+
+        let auth;
+
+        async function init() {
+            const status = document.getElementById("status");
+            try {
+                const res = await fetch(`${API}/api/config`);
+                if (!res.ok) throw new Error();
+                const config = await res.json();
+                const app = initializeApp(config);
+                auth = getAuth(app);
+
+                status.innerText = "✅ Sistema Online";
+                status.style.color = "#4ade80";
+                document.getElementById("btn-gerar").disabled = false;
+
+                onAuthStateChanged(auth, user => {
+                    if (user) document.getElementById("auth-area").style.display = "none";
+                });
+            } catch (e) {
+                status.innerText = "⚠️ Servidor acordando...";
+                setTimeout(init, 5000);
+            }
+        }
+
+        async function gerar() {
+            const btn = document.getElementById("btn-gerar");
+            const resultArea = document.getElementById("result-area");
+            const vendaCard = document.getElementById("venda-card");
+            const status = document.getElementById("status");
+
+            if (!auth?.currentUser) {
+                document.getElementById("auth-area").style.display = "block";
+                return;
+            }
+            
+            const prod = document.getElementById("produto").value;
+            if (!prod) return alert("Digite o produto!");
+
+            btn.innerText = "⏳ Criando...";
+            btn.disabled = true;
+
+            try {
+                const token = await auth.currentUser.getIdToken();
+                const res = await fetch(`${API}/api/anuncio`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                    body: JSON.stringify({ produto: prod })
+                });
+
+                const data = await res.json();
+
+                if (res.status === 403) {
+                    vendaCard.style.display = "block";
+                    resultArea.style.display = "none";
+                } else if (res.ok) {
+                    // GARANTIA: Se o dado não vier, ele mostra "Erro" em vez de "Indefinido"
+                    document.getElementById("resultado").innerText = data.resultado || "Erro ao formatar resposta";
+                    document.getElementById("creditos").innerText = data.creditosRestantes !== undefined ? data.creditosRestantes : "--";
+                    
+                    resultArea.style.display = "block";
+                    vendaCard.style.display = "none";
+                    status.innerText = "✅ Pronto!";
+                } else {
+                    alert("Erro do servidor: " + (data.erro || "Falha desconhecida"));
+                }
+            } catch (e) {
+                alert("Erro de conexão. Verifique se o servidor está ligado.");
+            } finally {
+                btn.innerText = "🚀 Gerar Anúncio Profissional";
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById("btn-gerar").onclick = gerar;
+
+        document.getElementById("btn-entrar").onclick = () => {
+            const email = document.getElementById("email").value;
+            const senha = document.getElementById("senha").value;
+            signInWithEmailAndPassword(auth, email, senha).catch(err => alert("Erro ao entrar: " + err.message));
+        };
+
+        document.getElementById("btn-cadastrar").onclick = () => {
+            const email = document.getElementById("email").value;
+            const senha = document.getElementById("senha").value;
+            createUserWithEmailAndPassword(auth, email, senha).catch(err => alert("Erro ao cadastrar: " + err.message));
+        };
+
+        init();
+    </script>
+</body>
+</html>
