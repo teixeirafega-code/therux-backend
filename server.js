@@ -6,7 +6,7 @@ import admin from "firebase-admin";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { MercadoPagoConfig, Preference } from 'mercadopago';
+import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 
 dotenv.config();
 
@@ -44,7 +44,7 @@ try {
 const db = admin.firestore();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// --- MERCADOPAGO (CONFIGURAÇÃO NOVA V2) ---
+// --- MERCADOPAGO (CONFIGURAÇÃO V2) ---
 const client = new MercadoPagoConfig({ 
     accessToken: process.env.MP_ACCESS_TOKEN 
 });
@@ -100,22 +100,19 @@ app.post("/api/anuncio", autenticar, async (req, res) => {
     }
 });
 
-// --- ROTA PAGAMENTO CORRIGIDA ---
+// --- ROTA PAGAMENTO (V2) ---
 app.post("/api/pagamento", autenticar, async (req, res) => {
     try {
         const preference = new Preference(client);
-        
         const body = {
-            items: [
-                {
-                    id: 'pack-10',
-                    title: "Pack 10 Créditos Hucks IA",
-                    quantity: 1,
-                    unit_price: 7.99,
-                    currency_id: "BRL"
-                }
-            ],
-            metadata: { uid: req.uid },
+            items: [{
+                id: 'pack-10',
+                title: "Pack 10 Créditos Hucks IA",
+                quantity: 1,
+                unit_price: 7.99,
+                currency_id: "BRL"
+            }],
+            metadata: { uid: req.uid }, // Importante para o Webhook saber quem pagou
             back_urls: {
                 success: "https://therux.netlify.app",
                 failure: "https://therux.netlify.app",
@@ -123,13 +120,40 @@ app.post("/api/pagamento", autenticar, async (req, res) => {
             },
             auto_return: "approved",
         };
-
         const response = await preference.create({ body });
         res.json({ checkout_url: response.init_point });
-
     } catch (err) {
         console.error("Erro MP:", err);
-        res.status(500).json({ erro: "Erro ao criar preferência de pagamento" });
+        res.status(500).json({ erro: "Erro ao criar pagamento" });
+    }
+});
+
+// --- WEBHOOK: ENTREGA AUTOMÁTICA DE CRÉDITOS ---
+app.post("/api/webhook", async (req, res) => {
+    const { query } = req;
+    const topic = query.topic || query.type;
+
+    try {
+        if (topic === "payment") {
+            const paymentId = query.id || req.body.data.id;
+            const paymentInstance = new Payment(client);
+            const paymentData = await paymentInstance.get({ id: paymentId });
+
+            if (paymentData.status === "approved") {
+                const uid = paymentData.metadata.uid;
+                const userRef = db.collection("usuarios").doc(uid);
+                
+                await userRef.set({ 
+                    creditos: admin.firestore.FieldValue.increment(10) 
+                }, { merge: true });
+                
+                console.log(`✅ 10 Créditos entregues ao UID: ${uid}`);
+            }
+        }
+        res.sendStatus(200);
+    } catch (error) {
+        console.error("Erro Webhook:", error);
+        res.sendStatus(500);
     }
 });
 
