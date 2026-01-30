@@ -20,41 +20,36 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.static(__dirname)); 
 
-// --- INICIALIZAÇÃO DO FIREBASE (CORRIGIDA) ---
+// --- FIREBASE ---
 let serviceAccount;
 const firebaseKeyPath = path.join(__dirname, "firebase-key.json");
 
 try {
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-        // Prioridade para o Render (Variável de Ambiente)
         serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-        console.log("✅ Firebase usando variável de ambiente!");
     } else if (fs.existsSync(firebaseKeyPath)) {
-        // Uso local (Arquivo físico)
         serviceAccount = JSON.parse(fs.readFileSync(firebaseKeyPath, "utf8"));
-        console.log("✅ Firebase usando arquivo local!");
     }
 
-    if (serviceAccount) {
-        if (!admin.apps.length) {
-            admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount)
-            });
-            console.log("🚀 Firebase Admin conectado com sucesso!");
-        }
-    } else {
-        console.error("❌ Erro: Credenciais do Firebase não encontradas!");
+    if (serviceAccount && !admin.apps.length) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log("🚀 Firebase Admin conectado!");
     }
 } catch (error) {
-    console.error("❌ Erro ao inicializar Firebase:", error.message);
+    console.error("❌ Erro Firebase:", error.message);
 }
 
 const db = admin.firestore();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
-const preference = new Preference(client);
 
-// Middleware de Autenticação
+// --- MERCADOPAGO (CONFIGURAÇÃO NOVA V2) ---
+const client = new MercadoPagoConfig({ 
+    accessToken: process.env.MP_ACCESS_TOKEN 
+});
+
+// Middleware de autenticação
 const autenticar = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ erro: "Não autorizado" });
@@ -68,7 +63,7 @@ const autenticar = async (req, res, next) => {
     }
 };
 
-// ROTA: Envia chaves pro Front-end
+// --- ROTAS ---
 app.get("/api/config", (req, res) => {
     res.json({
         apiKey: process.env.FIREBASE_API_KEY,
@@ -80,52 +75,62 @@ app.get("/api/config", (req, res) => {
     });
 });
 
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
-});
-
-// ROTA: Geração de Anúncio
 app.post("/api/anuncio", autenticar, async (req, res) => {
     const { produto } = req.body;
-    if (!produto) return res.status(400).json({ erro: "Produto é obrigatório" });
-
     try {
         const userRef = db.collection("usuarios").doc(req.uid);
         const doc = await userRef.get();
-        let creditos = doc.exists ? doc.data().creditos : 3;
+        let creditos = doc.exists ? doc.data().creditos : 1;
 
+        if (produto === "") return res.json({ creditosRestantes: creditos });
         if (creditos <= 0) return res.status(403).json({ erro: "Créditos esgotados" });
 
         const completion = await openai.chat.completions.create({
             model: "gpt-3.5-turbo",
-            messages: [{ role: "user", content: `Crie um anúncio persuasivo para o produto: ${produto}` }],
+            messages: [{ 
+                role: "system", 
+                content: "Especialista em marketing. Responda em 3 partes com |||: 1. Diagnóstico, 2. Amostra, 3. Imagem." 
+            }, { role: "user", content: `Produto: ${produto}` }],
         });
 
-        const resultadoIA = completion.choices[0].message.content;
         await userRef.set({ creditos: creditos - 1 }, { merge: true });
-
-        res.json({ resultado: resultadoIA, creditosRestantes: creditos - 1 });
+        res.json({ resultado: completion.choices[0].message.content, creditosRestantes: creditos - 1 });
     } catch (err) {
-        console.error("Erro na rota de anúncio:", err);
-        res.status(500).json({ erro: "Falha na geração" });
+        res.status(500).json({ erro: "Erro na IA" });
     }
 });
 
-// ROTA: Checkout Mercado Pago
+// --- ROTA PAGAMENTO CORRIGIDA ---
 app.post("/api/pagamento", autenticar, async (req, res) => {
     try {
-        const response = await preference.create({
-            body: {
-                items: [{ title: "🚀 Pack 10 Créditos Hucks IA", quantity: 1, unit_price: 7.99, currency_id: "BRL" }],
-                metadata: { uid: req.uid },
-                back_urls: { success: "https://therux.netlify.app", failure: "https://therux.netlify.app" },
-                auto_return: "approved"
-            }
-        });
+        const preference = new Preference(client);
+        
+        const body = {
+            items: [
+                {
+                    id: 'pack-10',
+                    title: "Pack 10 Créditos Hucks IA",
+                    quantity: 1,
+                    unit_price: 7.99,
+                    currency_id: "BRL"
+                }
+            ],
+            metadata: { uid: req.uid },
+            back_urls: {
+                success: "https://therux.netlify.app",
+                failure: "https://therux.netlify.app",
+                pending: "https://therux.netlify.app"
+            },
+            auto_return: "approved",
+        };
+
+        const response = await preference.create({ body });
         res.json({ checkout_url: response.init_point });
+
     } catch (err) {
-        res.status(500).json({ erro: "Erro ao gerar pagamento" });
+        console.error("Erro MP:", err);
+        res.status(500).json({ erro: "Erro ao criar preferência de pagamento" });
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Hucks IA online na porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
